@@ -1,0 +1,47 @@
+{
+  "director": {
+    "name": "Farruxbek",
+    "role": "Production Art Director @ 4Prep Academy",
+    "telegramChatId": null
+  },
+  "editors": [
+    { "id": "e1", "name": "Aziz", "telegram": "@aziz_edit", "specialty": "Reels / Shorts" },
+    { "id": "e2", "name": "Dilshod", "telegram": "@dilshod_mov", "specialty": "Long-form / YouTube" },
+    { "id": "e3", "name": "Madina", "telegram": "@madina_motion", "specialty": "Motion graphics" }
+  ],
+  "videos": [
+    {
+      "id": "v1",
+      "title": "IELTS Speaking lifehack — Reels",
+      "editorId": "e1",
+      "status": "in_progress",
+      "priority": "high",
+      "deadline": "2026-11-01",
+      "notes": "Hook birinchi 2 soniyada bo'lsin, subtitr oq rangda.",
+      "createdAt": "2026-10-20T09:00:00.000Z",
+      "updatedAt": "2026-10-24T14:00:00.000Z"
+    },
+    {
+      "id": "v2",
+      "title": "4Prep studiya tur — YouTube 8 daqiqa",
+      "editorId": "e2",
+      "status": "review",
+      "priority": "medium",
+      "deadline": "2026-11-05",
+      "notes": "Rang korreksiyasi tekshirilsin.",
+      "createdAt": "2026-10-18T09:00:00.000Z",
+      "updatedAt": "2026-10-25T18:00:00.000Z"
+    },
+    {
+      "id": "v3",
+      "title": "Yangi kurs intro animatsiyasi",
+      "editorId": null,
+      "status": "backlog",
+      "priority": "low",
+      "deadline": "2026-11-12",
+      "notes": "Brendbuk ranglaridan foydalanilsin.",
+      "createdAt": "2026-10-22T09:00:00.000Z",
+      "updatedAt": "2026-10-22T09:00:00.000Z"
+    }
+  ]
+}
