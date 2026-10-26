@@ -1,9 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI, Type, type FunctionDeclaration } from "@google/genai";
 import { config } from "./config.js";
 import * as prod from "./production.js";
 import type { VideoStatus } from "./store.js";
 
-const client = new Anthropic({ apiKey: config.anthropicApiKey });
+const ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
 
 const SYSTEM = `Sen — "Joi". Farruxbekning shaxsiy AI yordamchisisan.
 Farruxbek 4Prep Academy'da Production Art Director. U media jamoasini boshqaradi.
@@ -15,94 +15,91 @@ Qoidalar:
 - Doim O'ZBEK tilida, tabiiy va samimiy gapir. Farruxbekni ismidan chaqir.
 - Qisqa va aniq javob ber (bu Telegram). Ortiqcha so'z ishlatma.
 - Montaj, task, montajchilar yoki holat haqida savol/buyruq bo'lsa — HAR DOIM
-  tegishli tool'ni ishlat, xotirangdan taxmin qilma.
-- Yangi task berishda yoki holatni o'zgartirishda avval tool orqali bajar, keyin
-  tasdiqla.
+  tegishli funksiyani (tool) ishlat, xotirangdan taxmin qilma.
+- Yangi task berishda yoki holatni o'zgartirishda avval funksiya orqali bajar,
+  keyin tabiiy til bilan tasdiqla.
 - Kreativ yordam so'ralsa (g'oya, ssenariy, hook, sarlavha, montaj maslahati) —
   4Prep brendi va ta'lim auditoriyasiga mos, amaliy takliflar ber.
 - Ishonching komil bo'lmasa, aniqlashtiruvchi bitta savol ber.`;
 
-const tools: Anthropic.Tool[] = [
+// Gemini funksiya (tool) ta'riflari. Gemini sxemasi JSON Schema'dan biroz
+// farq qiladi: tiplar katta harf ("STRING", "OBJECT"), null-union yo'q —
+// ixtiyoriy maydonlar shunchaki "required" ro'yxatiga kirmaydi.
+const functionDeclarations: FunctionDeclaration[] = [
   {
     name: "get_summary",
-    description: "Butun production jarayonining umumiy holatini qaytaradi (qaysi bosqichda nechta video, montajchilar yuklamasi).",
-    input_schema: { type: "object", properties: {}, additionalProperties: false },
+    description: "Butun production jarayonining umumiy holati (qaysi bosqichda nechta video, montajchilar yuklamasi).",
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: "list_editors",
-    description: "Barcha montajchilar ro'yxati va ularning faol videolari sonini qaytaradi.",
-    input_schema: { type: "object", properties: {}, additionalProperties: false },
+    description: "Barcha montajchilar va ularning faol videolari sonini qaytaradi.",
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: "list_videos",
-    description: "Videolar ro'yxatini qaytaradi. Ixtiyoriy: holat bo'yicha filtrlash.",
-    input_schema: {
-      type: "object",
+    description: "Videolar ro'yxati. Ixtiyoriy: holat bo'yicha filtrlash.",
+    parameters: {
+      type: Type.OBJECT,
       properties: {
         status: {
-          type: ["string", "null"],
-          enum: ["backlog", "assigned", "in_progress", "review", "done", null],
-          description: "Faqat shu holatdagi videolar.",
+          type: Type.STRING,
+          enum: ["backlog", "assigned", "in_progress", "review", "done"],
+          description: "Faqat shu holatdagi videolar (ixtiyoriy).",
         },
       },
-      required: ["status"],
-      additionalProperties: false,
     },
   },
   {
     name: "add_video",
     description: "Yangi video/loyiha qo'shadi. Montajchi ismi berilsa, unga biriktiriladi.",
-    input_schema: {
-      type: "object",
+    parameters: {
+      type: Type.OBJECT,
       properties: {
-        title: { type: "string", description: "Video nomi." },
-        priority: { type: "string", enum: ["low", "medium", "high"] },
-        deadline: { type: ["string", "null"], description: "YYYY-MM-DD yoki null." },
-        notes: { type: "string", description: "Qisqa izoh/talablar." },
-        editor_name: { type: ["string", "null"], description: "Montajchi ismi yoki @username, yoki null." },
+        title: { type: Type.STRING, description: "Video nomi." },
+        priority: { type: Type.STRING, enum: ["low", "medium", "high"] },
+        deadline: { type: Type.STRING, description: "YYYY-MM-DD ko'rinishida (ixtiyoriy)." },
+        notes: { type: Type.STRING, description: "Qisqa izoh/talablar (ixtiyoriy)." },
+        editor_name: { type: Type.STRING, description: "Montajchi ismi yoki @username (ixtiyoriy)." },
       },
-      required: ["title", "priority", "deadline", "notes", "editor_name"],
-      additionalProperties: false,
+      required: ["title"],
     },
   },
   {
     name: "assign_video",
     description: "Mavjud videoni montajchiga biriktiradi.",
-    input_schema: {
-      type: "object",
+    parameters: {
+      type: Type.OBJECT,
       properties: {
-        video: { type: "string", description: "Video id (v1) yoki nomining bir qismi." },
-        editor_name: { type: "string", description: "Montajchi ismi yoki @username." },
+        video: { type: Type.STRING, description: "Video id (v1) yoki nomining bir qismi." },
+        editor_name: { type: Type.STRING, description: "Montajchi ismi yoki @username." },
       },
       required: ["video", "editor_name"],
-      additionalProperties: false,
     },
   },
   {
     name: "set_status",
     description: "Video holatini o'zgartiradi. 'review' yoki 'done' bo'lsa rejissyorga avtomatik xabar ketadi.",
-    input_schema: {
-      type: "object",
+    parameters: {
+      type: Type.OBJECT,
       properties: {
-        video: { type: "string", description: "Video id (v1) yoki nomining bir qismi." },
-        status: { type: "string", enum: ["backlog", "assigned", "in_progress", "review", "done"] },
+        video: { type: Type.STRING, description: "Video id (v1) yoki nomining bir qismi." },
+        status: { type: Type.STRING, enum: ["backlog", "assigned", "in_progress", "review", "done"] },
       },
       required: ["video", "status"],
-      additionalProperties: false,
     },
   },
   {
     name: "add_editor",
     description: "Jamoaga yangi montajchi qo'shadi.",
-    input_schema: {
-      type: "object",
+    parameters: {
+      type: Type.OBJECT,
       properties: {
-        name: { type: "string" },
-        telegram: { type: ["string", "null"], description: "@username yoki null." },
-        specialty: { type: ["string", "null"], description: "Masalan: Reels, Motion, YouTube." },
+        name: { type: Type.STRING },
+        telegram: { type: Type.STRING, description: "@username (ixtiyoriy)." },
+        specialty: { type: Type.STRING, description: "Masalan: Reels, Motion, YouTube (ixtiyoriy)." },
       },
-      required: ["name", "telegram", "specialty"],
-      additionalProperties: false,
+      required: ["name"],
     },
   },
 ];
@@ -129,7 +126,7 @@ function runTool(name: string, input: Record<string, unknown>): string {
         .join("\n");
 
     case "list_videos": {
-      const status = (input.status as VideoStatus | null) ?? undefined;
+      const status = (input.status as VideoStatus | undefined) || undefined;
       const videos = prod.listVideos(status ? { status } : undefined);
       if (!videos.length) return "Video topilmadi.";
       return videos
@@ -148,9 +145,9 @@ function runTool(name: string, input: Record<string, unknown>): string {
         return `Montajchi topilmadi: ${input.editor_name}. Avval qo'shing yoki boshqa ism bering.`;
       const v = prod.addVideo({
         title: String(input.title),
-        priority: (input.priority as "low" | "medium" | "high") ?? "medium",
-        deadline: (input.deadline as string | null) ?? null,
-        notes: String(input.notes ?? ""),
+        priority: (input.priority as "low" | "medium" | "high") || "medium",
+        deadline: (input.deadline as string) || null,
+        notes: String(input.notes || ""),
         editorId: editor?.id ?? null,
       });
       return `Qo'shildi: ${v.id} — "${v.title}"${editor ? `, ${editor.name}ga biriktirildi` : ""}.`;
@@ -175,79 +172,79 @@ function runTool(name: string, input: Record<string, unknown>): string {
     case "add_editor": {
       const e = prod.addEditor(
         String(input.name),
-        (input.telegram as string | null) ?? undefined,
-        (input.specialty as string | null) ?? undefined,
+        (input.telegram as string) || undefined,
+        (input.specialty as string) || undefined,
       );
       return `Montajchi qo'shildi: ${e.id} — ${e.name}.`;
     }
 
     default:
-      return `Noma'lum tool: ${name}`;
+      return `Noma'lum funksiya: ${name}`;
   }
 }
 
-// Har bir suhbat (chat) uchun alohida xotira.
-const histories = new Map<number, Anthropic.MessageParam[]>();
-const MAX_TURNS = 24; // xotirani cheklab turamiz
+// Gemini suhbat tarixi: { role: "user"|"model", parts: [...] }
+interface Part {
+  text?: string;
+  functionCall?: { name?: string; args?: Record<string, unknown> };
+  functionResponse?: { name: string; response: Record<string, unknown> };
+}
+interface Content {
+  role: "user" | "model";
+  parts: Part[];
+}
+
+const histories = new Map<number, Content[]>();
+const MAX_TURNS = 30;
 
 export async function ask(chatId: number, userText: string): Promise<string> {
   const history = histories.get(chatId) ?? [];
-  history.push({ role: "user", content: userText });
+  history.push({ role: "user", parts: [{ text: userText }] });
 
   let guard = 0;
   while (guard++ < 6) {
-    // Eslatma: claude-opus-5-5 da adaptive thinking standart yoqiq (effort=medium).
-    // Agar SDK'ni yangilasangiz, thinking:{type:"adaptive"} va
-    // output_config:{effort:"..."} ni qo'shib boshqarishingiz mumkin.
-    const response = await client.messages.create({
+    const response = await ai.models.generateContent({
       model: config.model,
-      max_tokens: 8000,
-      system: SYSTEM,
-      tools,
-      messages: history,
+      contents: history as any,
+      config: {
+        systemInstruction: SYSTEM,
+        tools: [{ functionDeclarations }],
+      },
     });
 
-    history.push({ role: "assistant", content: response.content });
+    const parts = (response.candidates?.[0]?.content?.parts ?? []) as Part[];
+    history.push({ role: "model", parts });
 
-    if (response.stop_reason === "refusal") {
-      return "Kechirasiz, bu so'rovni bajara olmadim. Boshqacha ifodalab ko'rasizmi?";
-    }
+    const calls = parts
+      .filter((p) => p.functionCall)
+      .map((p) => p.functionCall!);
 
-    if (response.stop_reason === "tool_use") {
-      const results: Anthropic.ToolResultBlockParam[] = [];
-      for (const block of response.content) {
-        if (block.type === "tool_use") {
-          let output: string;
-          try {
-            output = runTool(block.name, block.input as Record<string, unknown>);
-          } catch (err) {
-            output = `Xato: ${(err as Error).message}`;
-          }
-          results.push({
-            type: "tool_result",
-            tool_use_id: block.id,
-            content: output,
-          });
+    if (calls.length) {
+      const responseParts: Part[] = calls.map((call) => {
+        let output: string;
+        try {
+          output = runTool(call.name ?? "", call.args ?? {});
+        } catch (err) {
+          output = `Xato: ${(err as Error).message}`;
         }
-      }
-      history.push({ role: "user", content: results });
-      continue; // Claude natijalar bilan davom etsin
+        return {
+          functionResponse: {
+            name: call.name ?? "",
+            response: { result: output },
+          },
+        };
+      });
+      history.push({ role: "user", parts: responseParts });
+      continue; // Gemini natijalar bilan davom etsin
     }
 
-    // Oddiy javob
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
+    const text = parts
+      .filter((p) => typeof p.text === "string")
+      .map((p) => p.text)
       .join("\n")
       .trim();
 
-    // Xotirani kesib turamiz
-    if (history.length > MAX_TURNS) {
-      histories.set(chatId, history.slice(-MAX_TURNS));
-    } else {
-      histories.set(chatId, history);
-    }
-
+    histories.set(chatId, history.length > MAX_TURNS ? history.slice(-MAX_TURNS) : history);
     return text || "…";
   }
 
